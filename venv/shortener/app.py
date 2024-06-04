@@ -55,13 +55,12 @@ def create_cookie(username):
     conn = sqlite3.connect('urls.db')
     c = conn.cursor()
     new_cookie = "".join(random.choices(string.ascii_letters + string.digits, k=64))
-    print(new_cookie)
     user_id = get_user_by_username(username)[0]
     c.execute('SELECT * FROM session_id WHERE key = ? OR user_id = ?', (new_cookie, user_id))
     row = c.fetchone()
-    if c.rowcount != 0:
-        return row
-    c.execute('INSERT INTO session_id (username, cookie) VALUES (?, ?)', (username, new_cookie))
+    if row is not None:
+        return row[0]
+    c.execute('INSERT INTO session_id (user_id, key) VALUES (?, ?)', (user_id, new_cookie))
     conn.commit()
     return new_cookie
 
@@ -69,7 +68,7 @@ def create_cookie(username):
 def check_cookie(cookie):
     conn = sqlite3.connect('urls.db')
     c = conn.cursor()
-    c.execute('SELECT * FROM session_id WHERE cookie = ?', cookie)
+    c.execute("SELECT * FROM session_id WHERE key = ?", (cookie,))
     c.fetchone()
     if c.rowcount == 0:
         return False
@@ -78,7 +77,7 @@ def check_cookie(cookie):
 def get_user_from_cookie(cookie):
     conn = sqlite3.connect('urls.db')
     c = conn.cursor()
-    c.execute('SELECT username FROM session_id WHERE cookie = ?', (cookie,))
+    c.execute("SELECT user_id FROM session_id WHERE key = '?'", (cookie,))
     row = c.fetchone()
     if c.rowcount == 0:
         return None
@@ -122,10 +121,6 @@ def redirect_url(short_url):
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        if "session_id" in request.cookies:
-            if check_cookie(request.cookies["session_id"]):
-                return redirect(url_for('index'))
-
         username = request.form['username']
         password = request.form['password']
         user = get_user_by_username(username)
@@ -137,6 +132,11 @@ def login():
             return response
         else:
             flash('Invalid username or password')
+
+    if "session_id" in request.cookies:
+        if check_cookie(request.cookies["session_id"]):
+            return redirect(url_for('index'))
+
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
