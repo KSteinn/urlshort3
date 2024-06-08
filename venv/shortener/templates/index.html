@@ -6,7 +6,7 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            background-color: #bac9f3;
+            background-color: #f0f8ff;
             margin: 0;
             padding: 0;
             display: flex;
@@ -20,14 +20,36 @@
             color: #333;
         }
 
-        form {
-            background: #e8e8e8;
-            padding: 20px;
-            border-radius: 5px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        .container {
+            position: relative;
             width: 100%;
             max-width: 500px;
             margin: auto;
+        }
+
+        .logout-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: #ff4b5c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .logout-btn:hover {
+            background-color: #d43f4a;
+        }
+
+        form {
+            background: #fff;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            margin-top: 50px;
         }
 
         label {
@@ -41,11 +63,11 @@
             padding: 8px;
             margin-bottom: 10px;
             border: 1px solid #ccc;
-            border-radius: 10px;
+            border-radius: 4px;
         }
 
         button {
-            background-color: #28a745;
+            background-color: #007bff;
             color: white;
             border: none;
             padding: 10px 20px;
@@ -54,74 +76,101 @@
         }
 
         button:hover {
-            background-color: #218838;
+            background-color: #0056b3;
         }
 
         .shortened-url, .error {
             margin-top: 20px;
-            padding: 10px;
-            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        .dropdown {
+            margin-top: 20px;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 5px;
             width: 100%;
-            max-width: 500px;
-            text-align: center;
+            overflow: hidden;
         }
 
-        .shortened-url {
-            background-color: #dff0d8;
-            color: #3c763d;
+        .dropdown-summary {
+            padding: 15px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
 
-        .error {
-            background-color: #f8d7da;
-            color: #721c24;
+        .dropdown-content {
+            display: none;
+            padding: 15px;
+            border-top: 1px solid #ccc;
+        }
+
+        .dropdown-content ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .dropdown-content li {
+            padding: 10px 0;
+            border-bottom: 1px solid #eee;
+        }
+
+        .dropdown-content li:last-child {
+            border-bottom: none;
         }
     </style>
     <script>
-        function validateURL() {
-            const urlInput = document.getElementById('original_url');
-            const url = urlInput.value;
-            const regex = new RegExp(
-                '^(https?:\\/\\/)?' +
-                '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.?)+[a-z]{2,}|' +
-                '((\\d{1,3}\\.){3}\\d{1,3})|' +
-                'localhost|' +
-                '\\[?[a-f\\d*:+\\]\\])' +
-                '(\\:\\d+)?' +
-                '(\\/[-a-z\\d%@_.~+&:]*)*' +
-                '(\\?[;&a-z\\d%@_.,~+&:=-]*)?' +
-                '(\\#[-a-z\\d_]*)?$', 'i');
-
-            if (!regex.test(url)) {
-                document.getElementById('error').textContent = 'Invalid URL. Please enter a valid URL.';
-                return false;
+        function toggleDropdown() {
+            var content = document.getElementById("dropdown-content");
+            if (content.style.display === "block") {
+                content.style.display = "none";
+            } else {
+                content.style.display = "block";
             }
-
-            if (!/^https?:\/\//i.test(url)) {
-                urlInput.value = 'http://' + url;
-            }
-
-            return true;
         }
     </script>
 </head>
 <body>
-<h1>URL Shortener</h1>
-<form method="POST" onsubmit="return validateURL()">
-    <label for="original_url">Enter URL:</label>
-    <input type="text" id="original_url" name="original_url" required>
-    <button type="submit">Shorten</button>
-</form>
+<div class="container">
+    <button class="logout-btn" onclick="window.location.href='/logout'">Logout</button>
+    <h1>URL Shortener</h1>
+    <form method="post">
+        <label for="original_url">Enter URL to shorten:</label>
+        <input type="text" name="original_url" id="original_url" required>
+        <button type="submit">Shorten URL</button>
+    </form>
 
-{% if short_url %}
-<div class="shortened-url">
-    <p>Shortened URL: <a href="{{ short_url }}">{{ short_url }}</a></p>
-</div>
-{% endif %}
+    {% if short_url %}
+    <div class="shortened-url">Shortened URL: <a href="{{ short_url }}">{{ short_url }}</a></div>
+    {% endif %}
 
-{% if error %}
-<div id="error" class="error">
-    <p>{{ error }}</p>
+    {% if error %}
+    <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <div class="dropdown">
+        <div class="dropdown-summary" onclick="toggleDropdown()">
+            <span>Your URLs</span>
+            <span>&#x25BC;</span>
+        </div>
+        <div class="dropdown-content" id="dropdown-content">
+            {% if user_urls %}
+            <ul>
+                {% for original_url, short_url, creation_date in user_urls %}
+                <li>
+                    <div>Original URL: <a href="{{ original_url }}">{{ original_url }}</a></div>
+                    <div>Short URL: <a href="{{ request.host_url }}{{ short_url }}">{{ request.host_url }}{{ short_url }}</a></div>
+                    <div>Created on: {{ creation_date }}</div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div>No URLs found.</div>
+            {% endif %}
+        </div>
+    </div>
 </div>
-{% endif %}
 </body>
 </html>

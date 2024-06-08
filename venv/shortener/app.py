@@ -3,25 +3,29 @@ from flask import Flask, request, redirect, render_template, url_for, session, f
 import string, random, re
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
-
+from datetime import datetime
+####
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
-#test
+
 # Initialize the database
 def init_db():
     conn = sqlite3.connect('urls.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS urls
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, original_url TEXT, short_url TEXT, user_id INTEGER)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, original_url TEXT, short_url TEXT, user_id INTEGER, creation_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP)''')
     c.execute('''CREATE TABLE IF NOT EXISTS users
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS session_id
+                 (key VARCHAR(64) PRIMARY KEY, user_id INTEGER, FOREIGN KEY(user_id) REFERENCES users(id))''')
     conn.commit()
     conn.close()
 
 def insert_url(original_url, short_url, user_id):
     conn = sqlite3.connect('urls.db')
     c = conn.cursor()
-    c.execute('INSERT INTO urls (original_url, short_url, user_id) VALUES (?, ?, ?)', (original_url, short_url, user_id))
+    creation_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    c.execute('INSERT INTO urls (original_url, short_url, user_id, creation_date) VALUES (?, ?, ?, ?)', (original_url, short_url, user_id, creation_date))
     conn.commit()
     conn.close()
 
@@ -51,38 +55,43 @@ def create_user(username, password):
     conn.commit()
     conn.close()
 
+
 def create_cookie(username):
     conn = sqlite3.connect('urls.db')
     c = conn.cursor()
     new_cookie = "".join(random.choices(string.ascii_letters + string.digits, k=64))
-    print(new_cookie)
     user_id = get_user_by_username(username)[0]
     c.execute('SELECT * FROM session_id WHERE key = ? OR user_id = ?', (new_cookie, user_id))
     row = c.fetchone()
-    if c.rowcount != 0:
-        return row
-    c.execute('INSERT INTO session_id (username, cookie) VALUES (?, ?)', (username, new_cookie))
+    if row is not None:
+        return row[0]
+    c.execute('INSERT INTO session_id (user_id, key) VALUES (?, ?)', (user_id, new_cookie))
     conn.commit()
     return new_cookie
-
 
 def check_cookie(cookie):
     conn = sqlite3.connect('urls.db')
     c = conn.cursor()
-    c.execute('SELECT * FROM session_id WHERE cookie = ?', cookie)
-    c.fetchone()
-    if c.rowcount == 0:
-        return False
-    return True
+    c.execute("SELECT * FROM session_id WHERE key = ?", (cookie,))
+    row = c.fetchone()
+    conn.close()
+    return row is not None
 
 def get_user_from_cookie(cookie):
     conn = sqlite3.connect('urls.db')
     c = conn.cursor()
-    c.execute('SELECT username FROM session_id WHERE cookie = ?', (cookie,))
+    c.execute("SELECT user_id FROM session_id WHERE key = ?", (cookie,))
     row = c.fetchone()
-    if c.rowcount == 0:
-        return None
-    return row[0]
+    conn.close()
+    return row[0] if row else None
+
+def get_urls_by_user(user_id):
+    conn = sqlite3.connect('urls.db')
+    c = conn.cursor()
+    c.execute('SELECT original_url, short_url, creation_date FROM urls WHERE user_id = ?', (user_id,))
+    result = c.fetchall()
+    conn.close()
+    return result
 
 # Initialize the database
 init_db()
@@ -100,6 +109,8 @@ def index():
     if "session_id" not in request.cookies or not check_cookie(request.cookies["session_id"]):
         return redirect(url_for('login'))
 
+    user_id = get_user_from_cookie(request.cookies["session_id"])
+
     if request.method == 'POST':
         original_url = request.form['original_url']
         if not re.match(r'^(https?|ftp)://', original_url):
@@ -107,9 +118,11 @@ def index():
         if not re.match(url_regex, original_url):
             return render_template('index.html', error='Invalid URL. Please enter a valid URL.')
         short_url = generate_short_url()
-        insert_url(original_url, short_url, get_user_from_cookie(request.cookies["session_id"]))
-        return render_template('index.html', short_url=request.host_url + short_url)
-    return render_template('index.html')
+        insert_url(original_url, short_url, user_id)
+        return render_template('index.html', short_url=request.host_url + short_url, user_urls=get_urls_by_user(user_id))
+
+    user_urls = get_urls_by_user(user_id)
+    return render_template('index.html', user_urls=user_urls)
 
 @app.route('/<short_url>')
 def redirect_url(short_url):
@@ -122,21 +135,21 @@ def redirect_url(short_url):
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
-        if "session_id" in request.cookies:
-            if check_cookie(request.cookies["session_id"]):
-                return redirect(url_for('index'))
-
         username = request.form['username']
         password = request.form['password']
         user = get_user_by_username(username)
         if user and check_password_hash(user[2], password):
             response = flask.make_response(redirect(url_for('index')))
             cookie = create_cookie(username)
-            print(cookie)
             response.set_cookie("session_id", cookie)
             return response
         else:
             flash('Invalid username or password')
+
+    if "session_id" in request.cookies:
+        if check_cookie(request.cookies["session_id"]):
+            return redirect(url_for('index'))
+
     return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
@@ -155,7 +168,7 @@ def register():
 @app.route('/logout')
 def logout():
     response = flask.make_response(redirect(url_for('login')))
-    response.set_cookie("session_id", expires=0)
+    response.delete_cookie('session_id')
     return response
 
 if __name__ == '__main__':
